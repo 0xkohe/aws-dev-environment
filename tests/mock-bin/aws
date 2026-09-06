@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$ASOBI_TEST_LOG"
+case "$*" in
+  *'sts get-caller-identity'*)
+    if [[ "$ASOBI_TEST_SCENARIO" == wrong-account ]]; then printf '000000000000\n'; else printf '123456789012\n'; fi
+    ;;
+  *'ec2 describe-instances'*)
+    if [[ "$*" == *'State.Name'* ]]; then
+      printf 'running\n'
+    else
+      case "$ASOBI_TEST_SCENARIO" in
+        missing) printf '[]\n' ;;
+        ambiguous) printf '["i-one","i-two"]\n' ;;
+        *) printf '["i-asobi-test"]\n' ;;
+      esac
+    fi
+    ;;
+  *) printf 'Unexpected AWS call in negative test: %s\n' "$*" >&2; exit 99 ;;
+esac

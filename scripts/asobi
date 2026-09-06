@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+command=${1:-status}
+case "$command" in
+  start|stop|status|ssh|snapshot) ;;
+  *) printf 'Usage: %s {start|stop|status|ssh [remote-command...]|snapshot}\n' "$0" >&2; exit 2 ;;
+esac
+asobi_check_account
+instance=$(asobi_instance)
+
+case "$command" in
+  status)
+    asobi_aws ec2 describe-instances --instance-ids "$instance" \
+      --query 'Reservations[0].Instances[0].{Id:InstanceId,State:State.Name,Type:InstanceType,AZ:Placement.AvailabilityZone}' --output table
+    ;;
+  start)
+    state=$(asobi_aws ec2 describe-instances --instance-ids "$instance" --query 'Reservations[0].Instances[0].State.Name' --output text)
+    if [[ "$state" == stopping ]]; then
+      asobi_aws ec2 wait instance-stopped --instance-ids "$instance"
+      state=stopped
+    fi
+    if [[ "$state" == stopped ]]; then
+      asobi_aws ec2 start-instances --instance-ids "$instance" --output table
+    fi
+    asobi_aws ec2 wait instance-running --instance-ids "$instance"
+    asobi_aws ec2 wait instance-status-ok --instance-ids "$instance"
+    for ((i=0; i<60; i++)); do
+      ping=$(asobi_aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$instance" --query 'InstanceInformationList[0].PingStatus' --output text)
+      if [[ "$ping" == Online ]]; then
+        printf 'Ready: ssh %s (%s)\n' "$ASOBI_NAME" "$instance"
+        exit 0
+      fi
+      sleep 5
+    done
+    printf 'EC2 is running but SSM is not online; check the agent and networking.\n' >&2
+    exit 1
+    ;;
+  stop)
+    printf 'Stopping %s; active processes will end. EBS files will remain.\n' "$instance"
+    asobi_aws ec2 stop-instances --instance-ids "$instance" --output table
+    asobi_aws ec2 wait instance-stopped --instance-ids "$instance"
+    ;;
+  ssh)
+    shift || true
+    exec ssh "$ASOBI_NAME" "$@"
+    ;;
+  snapshot)
+    # Take a stopped-volume snapshot to preserve a consistent root filesystem.
+    state=$(asobi_aws ec2 describe-instances --instance-ids "$instance" --query 'Reservations[0].Instances[0].State.Name' --output text)
+    if [[ "$state" != stopped ]]; then
+      printf 'Stop the instance with scripts/asobi stop before taking a snapshot.\n' >&2
+      exit 1
+    fi
+    volume=$(asobi_aws ec2 describe-instances --instance-ids "$instance" \
+      --query 'Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName==`/dev/sda1`].Ebs.VolumeId | [0]' --output text)
+    [[ "$volume" == vol-* ]] || { printf 'Root volume not found.\n' >&2; exit 1; }
+    asobi_aws ec2 create-snapshot --volume-id "$volume" --description "$ASOBI_NAME stopped-root backup" \
+      --tag-specifications "ResourceType=snapshot,Tags=[{Key=Project,Value=$ASOBI_NAME},{Key=Name,Value=$ASOBI_NAME-root-backup}]" \
+      --query '{SnapshotId:SnapshotId,State:State}' --output table
+    ;;
+esac
