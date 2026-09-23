@@ -15,6 +15,7 @@ crash.*.log
 *.tfvars.json
 !*.tfvars.example
 .local/
+k-local-download-*/
 conversations/
 backend.local.json
 .github/**

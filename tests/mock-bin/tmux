@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Test double for tmux; it records the command instead of contacting a real server.
+set -euo pipefail
+printf '%s\n' "$*" >> "${ASOBI_TEST_LOG:?ASOBI_TEST_LOG must point to a writable log}"

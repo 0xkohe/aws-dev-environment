@@ -178,23 +178,25 @@ infocmp -x xterm-ghostty | ssh asobi-dev 'tic -x -'
 
 ### tmux 内でスクロールする
 
-`Ctrl-b` を押して離し、`[` を押すとコピーモードに入ります。矢印キーや `Page Up` / `Page Down` で履歴をスクロールし、`q` で通常の操作に戻ります（標準設定）。
+共通設定 `shell/asobi.tmux.conf` で `set -g mouse on` を指定します。マウスホイールとトラックパッドのスクロールで履歴をたどれます。
 
-マウスやトラックパッドでスクロールするには、接続先の tmux 内のシェルで実行します。
+この設定は、後述の「VS Code・ポート転送・Bash」のコマンドを一度実行すると `~/.config/asobi/tmux.conf` に設置され、`~/.tmux.conf` から読み込まれます。以降はログインして tmux に入るだけで有効になり、毎回の設定は不要です。既存の `~/.tmux.conf` の内容は書き換えず、変更前のファイルは `~/.config/asobi/backup.*` に保存します。
 
-```bash
-TERM=xterm-256color tmux set -g mouse on
-```
+キーボードだけで操作する場合は、`Ctrl-b` を押して離し、`[` を押すとコピーモードに入ります。矢印キーや `Page Up` / `Page Down` で履歴をスクロールし、`q` で通常の操作に戻ります（標準設定）。
 
-今動いている tmux に反映されます。tmux サーバーの再起動後も有効にするには、接続先の `~/.tmux.conf` に `set -g mouse on` を追記します。既存の設定を残し、同じ行の重複を避けるには次を実行します。
+マウスを一時的に無効にするには、tmux 内のシェルで実行します。
 
 ```bash
-touch ~/.tmux.conf
-grep -Fxq 'set -g mouse on' ~/.tmux.conf || printf '\nset -g mouse on\n' >> ~/.tmux.conf
-TERM=xterm-256color tmux source-file ~/.tmux.conf
+tmux set -g mouse off
 ```
 
-`source-file` は起動中の tmux に設定を読み直させます。tmux が起動していない場合は、次回起動時に自動で読み込まれるため実行不要です。Ghostty の端末情報を登録済みなら、`TERM=xterm-256color` は省略できます。
+恒久的に戻すには `~/.tmux.conf` の ASOBI 用 `source-file` 行を削除し、tmux サーバーを再起動して読み込み直します（実行中の処理は終了します）。
+
+Ghostty で端末情報が未登録のままセットアップすると、起動中の tmux への読み込みだけが失敗し、`Restart the tmux server to apply the ASOBI tmux preferences.` と表示されます。前述の端末情報の登録を行うか、次を実行してください。
+
+```bash
+TERM=xterm-256color tmux source-file ~/.config/asobi/tmux.conf
+```
 
 ### 接続・停止と処理の関係
 
@@ -218,14 +220,14 @@ VS Code の `Remote-SSH: Connect to Host...` で `asobi-dev` を選び、`/home/
 ssh -L 127.0.0.1:3000:localhost:3000 asobi-dev
 ```
 
-任意の Bash 設定は Git ブランチ表示、履歴5万件と端末間共有、入力後の↑↓履歴検索、大小文字を区別しない補完を追加します。独自の短縮 alias は追加しません。
+任意の Bash 設定は Git ブランチ表示、履歴5万件と端末間共有、入力後の↑↓履歴検索、大小文字を区別しない補完を追加します。同じコマンドで tmux の共通設定（マウススクロール）も設置します。独自の短縮 alias は追加しません。
 
 ```bash
-scp shell/asobi.bash scripts/setup-shell.sh asobi-dev:/home/ubuntu/
-ssh asobi-dev 'bash ~/setup-shell.sh ~/asobi.bash'
+scp shell/asobi.bash shell/asobi.tmux.conf scripts/setup-shell.sh asobi-dev:/home/ubuntu/
+ssh asobi-dev 'bash ~/setup-shell.sh ~/asobi.bash ~/asobi.tmux.conf'
 ```
 
-反映後は SSH に入り直します。既存セッションの alias は設定の削除だけでは消えません。Ubuntu 標準の alias は変更しません。バックアップは `~/.config/asobi/backup.*` に保存します。無効化は `~/.bashrc` 末尾の ASOBI 用 source 行を削除して再接続します。
+反映後は SSH に入り直します。既存セッションの alias は設定の削除だけでは消えません。Ubuntu 標準の alias は変更しません。バックアップは `~/.config/asobi/backup.*` に保存します。無効化は `~/.bashrc` 末尾の ASOBI 用 source 行（tmux は `~/.tmux.conf` の ASOBI 用 `source-file` 行）を削除して再接続します。cloud-init の変更は既存 OS に自動適用されないため、既存インスタンスではこのコマンドを一度実行します。
 
 ## 費用・保護・バックアップ
 
